@@ -26,45 +26,75 @@ This repository contains a complete **transmitter and receiver chain** implement
 - 🔹 Carrier frequency offset (CFO) estimation and correction
 - 🔹 Frame synchronization using a **Barker-3 preamble**
 - 🔹 Error control with **repetition coding** and **Hamming (7,4)** coding
-- 🔹 Real-time transmission and reception on PlutoSDR
+- 🔹 Full signal path including **DAC, upconversion, downconversion and ADC** on PlutoSDR
+- 🔹 Real-time transmission and reception over the air
 
 ---
 
 ## 🧩 System Architecture
 
+The chain is split into two parts: the **digital baseband**, which runs in Python on the host PC, and the **RF front end**, which lives inside the PlutoSDR (AD9363 transceiver) and handles DAC/ADC and frequency conversion.
+
 ### Transmitter
 
 ```mermaid
-flowchart LR
-    A["Source Bits"] --> B["Hamming (7,4)<br/>Encoder"]
-    B --> C["Repetition<br/>Encoder"]
-    C --> D["Preamble Insertion<br/>(Barker-3)"]
-    D --> E["Symbol Mapper<br/>(ASK / PSK / QAM)"]
-    E --> F["Upsampling"]
-    F --> G["Pulse Shaping<br/>(Raised Cosine)"]
-    G --> H["PlutoSDR TX"]
+flowchart TB
+    subgraph HOST["💻 Python on Host PC: Digital Baseband"]
+        direction TB
+        A["Source Bits"] --> B["Hamming (7,4) Encoder"]
+        B --> C["Repetition Encoder"]
+        C --> D["Preamble Insertion (Barker-3)"]
+        D --> E["Symbol Mapper (ASK / PSK / QAM)"]
+        E --> F["Upsampling"]
+        F --> G["Pulse Shaping (Cosine / Raised Cosine)"]
+    end
 
-    style A fill:#e8f4fd,stroke:#1f77b4,color:#000
-    style H fill:#fde8e8,stroke:#d62728,color:#000
+    subgraph PLUTO["📡 PlutoSDR: RF Front End"]
+        direction TB
+        H["DAC (I and Q)"] --> I["Low-Pass Filter"]
+        I --> J["Upconversion (Mixer with LO, fc)"]
+        J --> K["Power Amplifier"]
+        K --> L["TX Antenna"]
+    end
+
+    G -->|"I/Q samples over USB"| H
+
+    style HOST fill:#e8f4fd,stroke:#1f77b4,color:#000
+    style PLUTO fill:#fdf2e8,stroke:#ff7f0e,color:#000
 ```
 
 ### Receiver
 
 ```mermaid
-flowchart LR
-    H["PlutoSDR RX"] --> I["Matched<br/>Filter"]
-    I --> J["CFO Estimation<br/>& Correction"]
-    J --> K["Frame Sync<br/>(Barker-3 Correlation)"]
-    K --> L["Symbol Timing<br/>& Downsampling"]
-    L --> M["Phase<br/>Correction"]
-    M --> N["Demapper /<br/>Detector"]
-    N --> O["Repetition<br/>Decoder"]
-    O --> P["Hamming (7,4)<br/>Decoder"]
-    P --> Q["Recovered Bits"]
+flowchart TB
+    subgraph PLUTO["📡 PlutoSDR: RF Front End"]
+        direction TB
+        M["RX Antenna"] --> N["Low-Noise Amplifier (LNA)"]
+        N --> O["Downconversion (Mixer with LO, fc)"]
+        O --> P["Low-Pass Filter"]
+        P --> Q["ADC (I and Q)"]
+    end
 
-    style H fill:#fde8e8,stroke:#d62728,color:#000
-    style Q fill:#e8f4fd,stroke:#1f77b4,color:#000
+    subgraph HOST["💻 Python on Host PC: Digital Baseband"]
+        direction TB
+        R["Matched Filter"] --> S["CFO Estimation and Correction"]
+        S --> T["Frame Sync (Barker-3 Correlation)"]
+        T --> U["Symbol Timing and Downsampling"]
+        U --> V["Phase Correction"]
+        V --> W["Demapper / Detector"]
+        W --> X["Repetition Decoder"]
+        X --> Y["Hamming (7,4) Decoder"]
+        Y --> Z["Recovered Bits"]
+    end
+
+    Q -->|"I/Q samples over USB"| R
+
+    style HOST fill:#e8f4fd,stroke:#1f77b4,color:#000
+    style PLUTO fill:#fdf2e8,stroke:#ff7f0e,color:#000
 ```
+
+> **Signal path in one line:**
+> Bits → Coding → Preamble → Mapping → Pulse Shaping → **DAC → Upconversion** → 📶 *Wireless Channel* → **Downconversion → ADC** → Matched Filter → CFO Correction → Frame Sync → Timing → Phase Correction → Detection → Decoding → Bits
 
 ---
 
